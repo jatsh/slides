@@ -1,0 +1,244 @@
+﻿Spring-kafka简单用法介绍
+
+17 April 2019
+Tags: spring,kafka
+
+June.Wang
+Netease
+june.wang@corp.netease.com
+https://wangjun.me
+@jatshw
+
+* kafka基本命令
+- 创建topic
+kafka-topics.sh --create --zookeeper 192.168.106.236:2181  -replication-factor 1 --partitions 1 --topic topic01
+
+- 展示topic 
+kafka-topics.sh --zookeeper 192.168.106.236:2181 --list
+
+- 描述topic
+kafka-topics.sh --describe --zookeeper 192.168.106.236:2181 --topic topic01
+
+- 删除topic
+kafka-topics.sh --zookeeper 192.168.106.236:2181 --delete --topic topic01
+
+* 
+- topic offset 统计
+kafka-run-class.sh kafka.tools.GetOffsetShell --broker-list 192.168.106.236:9092 --topic topic02 --time -1
+
+-1 表示查询 topic02 各个分区当前最大的消息位移值 (注意，这里的位移不是 consumer 端的位移，而是指消息在每个分区的位置)
+如果要查询曾经生产过的最大消息数，那么只运行上面这条命令然后把各个分区的结果相加就可以了。
+
+ D:\dev\kafka\kafka_2.12-2.2.0\bin\windows
+ kafka-run-class.bat kafka.tools.GetOffsetShell --broker-list 192.168.106.236:9092 --topic topic02 
+ --time -1
+ topic02:0:6
+ topic02:1:11
+ topic02:2:27
+ topic02:3:43
+
+* 
+- 生产消息
+kafka-console-producer.sh --broker-list 192.168.106.236:9092 --topic topic02
+
+- 消费消息
+kafka-console-consumer.sh --bootstrap-server 192.168.106.236:9092 --topic topic02 --from-beginning 
+
+ --partition 选项 从指定的分区消费消息 
+ --offset 选项 从指定的偏移位置消费消息 
+ --group 选项 以指定消费者组的形式消费消息 
+ --max-messages 选项 指定消费消息的最大个数 
+ --property print.key=true  --property key.separator=, 将消息的 key 也输出
+
+例如:从 2号分区 偏移量为1的位置开始消费topic 2条消息
+kafka-console-consumer.sh --topic topic02 --partition 2 --offset 1 --max-messages 2 --bootstrap-server 192.168.106.236:9092
+
+* Show Code
+在 pom.xml 中添加依赖：
+
+ <dependency>
+     <groupId>org.springframework.kafka</groupId>
+     <artifactId>spring-kafka</artifactId>
+ </dependency>
+ 
+* 
+
+*基本配置*
+
+kafka 代理地址，可以多个用“,”隔开
+
+ spring.kafka.bootstrap-servers=192.168.106.236:9092
+ 
+默认topic id
+
+ spring.kafka.template.default-topic=topic-test
+
+listener 容器中的线程数，用于提高并发量
+
+ spring.kafka.listener.concurrency=3
+
+* Producer相关配置
+
+生产者重试次数
+
+ spring.kafka.producer.retries=0
+
+每次批量发送消息的数量,内存块大小16K
+
+ spring.kafka.producer.batch-size=16384
+
+缓存上限 32M
+
+ spring.kafka.producer.buffer-memory=33554432
+
+指定消息key和消息体的编解码方式
+
+ spring.kafka.producer.key-serializer=org.apache.kafka.common.serialization.StringSerializer
+ spring.kafka.producer.value-serializer=org.apache.kafka.common.serialization.StringSerializer
+
+* Consumer相关配置
+
+指定默认消费者group id
+
+ spring.kafka.consumer.group-id=myGroup1
+
+若设置为earliest，那么会从头开始读partition
+
+ spring.kafka.consumer.auto-offset-reset=latest
+
+指定消息key和消息体的编解码方式
+
+ spring.kafka.consumer.key-deserializer=org.apache.kafka.common.serialization.StringDeserializer
+ spring.kafka.consumer.value-deserializer=org.apache.kafka.common.serialization.StringDeserializer
+
+* ProducerDemo
+
+ public class ProducerDemo {
+ 
+     public static void main(String[] args) {
+        //1.设置Producer参数
+        Properties props = initConfig();
+
+        //2.创建 Producer
+        Producer<String, String> producer = new KafkaProducer<>(props);
+
+        //3. 创建一条信息 向kafka集群发送消息,除了消息值本身,还包括key信息。
+        ProducerRecord<String, String> record = new ProducerRecord("topic02", "producer_test_key", 
+        "producer_test_value");
+
+        try {
+            //第四步:发送消息
+            //立即发送：只管发送消息到 server 端，不 care 消息是否成功发送。
+            //大部分情况下，发送会成功，因为 Kafka 自身具有高可用性，producer 会自动重试；但有时也会丢失消息
+            producer.send(record);
+        } catch (Exception e) {
+            logger.error("", e);
+        } finally {
+            producer.close();
+        }
+ }
+* 同步发送
+
+producer的send方法返回Future对象，我们使用Future对象的get方法来实现同步发送消息。
+Future.get () 方法等待 Kafka 的状态返回,会产生阻塞，直到获取kafka集群的响应，响应结果分两种：
+1、响应中有异常：此时get方法会抛出异常，我们可以捕获此异常进行相应的业务处理
+2、响应中无异常：此时get方法会返回RecordMetadata对象，此对象包含了当前发送成功的消息在Topic中的offset、partition等信息
+
+ public static void syncSend(Producer<String, String> producer, ProducerRecord<String, String> 
+                             record) {
+        try {
+          
+            RecordMetadata rm = producer.send(record).get();
+            long offset = rm.offset();
+            int partition = rm.partition();
+            System.out.println("the message offset: " + offset + ", partition:" + partition);
+            producer.close();
+        } catch (Exception e) {
+            logger.error("", e);
+        }
+    }
+* 异步发送
+ public static void asyncSend(Producer<String, String> producer, ProducerRecord<String, String> 
+                              producerRecord) {
+        try {
+            producer.send(producerRecord, new ProducerCallback());
+            producer.close();
+        } catch (Exception e) {
+            logger.error("", e);
+        }
+    }
+
+  public static class ProducerCallback implements Callback {
+
+        @Override
+        public void onCompletion(RecordMetadata metadata, Exception exception) {
+            //在回调函数中，对RecordMetadata进行操作
+            long offset = metadata.offset();
+            int partition = metadata.partition();
+            System.out.println("回调函数中 the message offset: " + offset + ",partition:" + partition);
+        }
+    }
+* 自动提交offset Demo
+
+ public class AutoCommitConsumerDemo {
+
+    public static void main(String[] args) {
+
+        Properties props = new Properties();
+        props.put("bootstrap.servers", "192.168.106.236:9092");
+        props.put("client.id", "AutoCommitConsumerDemo_1");
+        props.put("group.id", "autoCommitConsumers_group");
+        props.put("enable.auto.commit", "true");
+        props.put("auto.commit.interval.ms", "1000");
+        props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+        props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+
+        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+        consumer.subscribe(Lists.newArrayList("topic02", "topic01"));
+        while (true) {
+            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
+            for (ConsumerRecord<String, String> record : records) {
+                System.out.printf("=====================offset = %d, key = %s, value = %s%n",
+                        record.offset(), record.key(), record.value());
+            }
+        }
+    }
+}
+
+* Springboot SimpleConsumer
+ @Component
+ public class SimpleConsumer {
+ 
+     /**
+      * Listen.
+      *
+      * @param data the data
+      */
+     @KafkaListener(id = "simpleConsumer", topics = {"topic01","topic02"})
+     public void listen(String data) {
+         System.out.println("SimpleConsumer收到消息：" + data);
+     }
+ }
+
+* 分区消费
+举个栗子：监听指定topic的第 0 partition
+
+ @KafkaListener(id = "id0", topicPartitions = {@TopicPartition(topic = "topic02", partitions = {"0"})})
+    public void listenPartition0(List<ConsumerRecord<?, ?>> records) {
+        log.info("Id0 Listener, Thread ID: " + Thread.currentThread().getId());
+        log.info("Id0 records size " + records.size());
+
+        for (ConsumerRecord<?, ?> record : records) {
+            Optional<?> kafkaMessage = Optional.ofNullable(record.value());
+            log.info("Received: " + record);
+            if (kafkaMessage.isPresent()) {
+                Object message = record.value();
+                String topic = record.topic();
+                log.info("p0 Received message={},topic={}", message,topic);
+            }
+        }
+    }
+
+* Demo源码
+
+Gitlab： http://git.blz.netease.com/june.wang/springKafka-demo
