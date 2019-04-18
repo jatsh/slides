@@ -239,32 +239,31 @@ Future.get () 方法等待 Kafka 的状态返回,会产生阻塞，直到获取k
         }
     }
 
-* Demo源码
 
-Gitlab： http://git.blz.netease.com/june.wang/springKafka-demo
 
 * 常见问题
 
-Q : 正常情况当消费者消费消息的时候，偏移量也线性的的增加；请问这个怎么理解 是说当发布者发布消息到队列后是没偏移量的 只有消费者消费了才会增加？
-A : 每个消费者控制自己的偏移量。
+ Q : 正常情况当消费者消费消息的时候，偏移量也线性的的增加；请问这个怎么理解 是说当发布者发布消息到队列后是没偏移量的 只有消费者消费了才会增加？
+ A : 每个消费者控制自己的偏移量。
 
-Q : 一个 topic 有 3 个分区：partition0，partition1，partition2；如果一个 consumer group 中有多个 consumer
-对于 partition0 中的消息，在没有给 consumer 指定分区的情况下，是随机分配给一个 consumer，还是会一直分配一个固定的一个 consumer。
-A : 一个分区的数据是会被固定的一个消费者消费，只有该消费宕掉时候，该分区的消费者才会转变。
+ Q : 一个 topic 有 3 个分区：partition0，partition1，partition2；如果一个 consumer group 中有多个 consumer
+ 对于 partition0 中的消息，在没有给 consumer 指定分区的情况下，是随机分配给一个 consumer，还是会一直分配一个固定的一个 consumer。
+ A : 一个分区的数据是会被固定的一个消费者消费，只有该消费宕掉时候，该分区的消费者才会转变。
 
-Q : kakfa 每次消费拉取数据的时候，如何确定去哪一个 partition 拉取数据
-A : 默认随机的，也可以指定partition
+ Q : kakfa 每次消费拉取数据的时候，如何确定去哪一个 partition 拉取数据
+ A : 默认随机的，也可以指定partition
 
-Q : 有没有什么机制能检测 kafka 的服务是否正常
-A : 非阻塞式的，后台发送，可以利用 callback 来获取发送成功还是失败的异常
+ Q : 有没有什么机制能检测 kafka 的服务是否正常
+ A : 非阻塞式的，后台发送，可以利用 callback 来获取发送成功还是失败的异常
      如果想及时捕捉，可使用阻塞式发送，效率牺牲很大，只需要在发送的时候价格.get () 即可，就能实时拿到异常。
      producer.send(new ProducerRecord<String, String>("my-topic", Integer.toString(i), Integer.toString(i))).get();
 
-Q : "如果一个消息 M1 和 M2 使用相同的 producer 发送，M1 先发送，那么 M1 将比 M2 的 offset 低，并且优先的出现在日志中" 是如何保证的？
-A ：发送前，都先进缓存的。所以你相同的 producer，相同的分区，就会进相同的缓存队列里。
+*
+ Q : "如果一个消息 M1 和 M2 使用相同的 producer 发送，M1 先发送，那么 M1 将比 M2 的 offset 低，并且优先的出现在日志中" 是如何保证的？
+ A ：发送前，都先进缓存的。所以你相同的 producer，相同的分区，就会进相同的缓存队列里。
 
-Q : kafka 如何配置多线程消费
-A : 读取消息，然后多线程。多线程要在 poll () 之后实现。
+ Q : kafka 如何配置多线程消费
+ A : 读取消息，然后多线程。多线程要在 poll () 之后实现。
 
-Q :  那么怎么保证 Consumer 连接 Kafka 接收消息时对数据的不重复消费
-A : 不重复消费是你自己配置的。比如 auto.offset.reset= latest，就不会重复了，当你需要重新消费之前的数据，改成 earliest 就可以了。
+ Q :  那么怎么保证 Consumer 连接 Kafka 接收消息时对数据的不重复消费
+ A : 不重复消费是你自己配置的。比如 auto.offset.reset= latest，就不会重复了，当你需要重新消费之前的数据，改成 earliest 就可以了。
